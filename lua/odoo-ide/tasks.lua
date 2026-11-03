@@ -1,0 +1,551 @@
+local M = {}
+local doodba = require("odoo-ide.doodba")
+local context = require("odoo-ide.context")
+
+local function get_current_addon()
+  local addon_root = context.get_addon_root()
+  if addon_root then
+    return addon_root:gsub(".*/", ""), addon_root
+  end
+  return nil, nil
+end
+
+local function find_project_root()
+  return doodba.find_root()
+end
+
+local function run_invoke(c, opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    return false, "Not in a Doodba project"
+  end
+
+  local cmd = opts.cmd or {}
+  table.insert(cmd, 1, "invoke")
+
+  local handle = vim.system(cmd, {
+    cwd = root,
+    env = opts.env or {},
+  }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] " .. opts.success_msg, vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Error: " .. (handler.stderr or "Unknown error"), vim.log.levels.ERROR)
+    end
+  end)
+
+  return true, handle
+end
+
+function M.test(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local addon_name = opts.module
+  local addon_path = opts.path
+
+  if not addon_name and not addon_path then
+    local name, path = get_current_addon()
+    if name then
+      addon_name = name
+      addon_path = path
+    end
+  end
+
+  if not addon_name then
+    vim.notify("[odoo-ide] Cannot determine module. Use --module or be in a module directory.", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "run",
+    "--rm",
+    "-e", "DB_FILTER=^devel$",
+    "odoo",
+    "odoo",
+    "--test-enable",
+    "--stop-after-init",
+    "--workers=0",
+    "--test-tags",
+    "/" .. addon_name,
+    "-i",
+    addon_name,
+  }
+
+  local handle = vim.system(cmd, {
+    cwd = root,
+  }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Tests passed for " .. addon_name, vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Tests failed for " .. addon_name, vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.install(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local addon_name = opts.module
+  if not addon_name then
+    local name = get_current_addon()
+    if name then
+      addon_name = name
+    end
+  end
+
+  if not addon_name then
+    vim.notify("[odoo-ide] Cannot determine module. Use --module or be in a module directory.", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "stop",
+    "odoo",
+  }
+
+  vim.system(cmd, { cwd = root }, function()
+    local install_cmd = {
+      "docker",
+      "compose",
+      "run",
+      "--rm",
+      "odoo",
+      "addons",
+      "init",
+      "-w",
+      addon_name,
+    }
+
+    vim.system(install_cmd, { cwd = root }, function(handler)
+      if handler.code == 0 then
+        vim.notify("[odoo-ide] Module " .. addon_name .. " installed", vim.log.levels.INFO)
+      else
+        vim.notify("[odoo-ide] Failed to install " .. addon_name, vim.log.levels.ERROR)
+      end
+    end)
+  end)
+end
+
+function M.uninstall(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local addon_name = opts.module
+  if not addon_name then
+    local name = get_current_addon()
+    if name then
+      addon_name = name
+    end
+  end
+
+  if not addon_name then
+    vim.notify("[odoo-ide] Cannot determine module. Use --module or be in a module directory.", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "run",
+    "--rm",
+    "odoo",
+    "click-odoo-uninstall",
+    "-m",
+    addon_name,
+  }
+
+  vim.system(cmd, { cwd = root }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Module " .. addon_name .. " uninstalled", vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Failed to uninstall " .. addon_name, vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.logs(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "logs",
+    "-f",
+    "--tail",
+    tostring(opts.tail or 50),
+  }
+
+  if opts.container then
+    table.insert(cmd, opts.container)
+  else
+    table.insert(cmd, "odoo")
+  end
+
+  vim.system(cmd, {
+    cwd = root,
+    detach = true,
+  })
+end
+
+function M.start(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "up",
+    "--detach",
+  }
+
+  vim.system(cmd, { cwd = root }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Odoo started", vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Failed to start Odoo", vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.stop(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "down",
+    "--remove-orphans",
+  }
+
+  vim.system(cmd, { cwd = root }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Odoo stopped", vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Failed to stop Odoo", vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.restart(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "restart",
+    "-t0",
+    "odoo",
+    "odoo_proxy",
+  }
+
+  vim.system(cmd, { cwd = root }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Odoo restarted", vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Failed to restart Odoo", vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.resetdb(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local dbname = opts.dbname or "devel"
+  local modules = opts.modules or "base"
+
+  local stop_cmd = { "docker", "compose", "stop", "odoo" }
+  vim.system(stop_cmd, { cwd = root }, function()
+    local drop_cmd = {
+      "docker",
+      "compose",
+      "run",
+      "--rm",
+      "-l", "traefik.enable=false",
+      "odoo",
+      "click-odoo-dropdb",
+      dbname,
+    }
+
+    vim.system(drop_cmd, { cwd = root }, function()
+      local init_cmd = {
+        "docker",
+        "compose",
+        "run",
+        "--rm",
+        "-l", "traefik.enable=false",
+        "odoo",
+        "click-odoo-initdb",
+        "-n", dbname,
+        "-m", modules,
+      }
+
+      vim.system(init_cmd, { cwd = root }, function(handler)
+        if handler.code == 0 then
+          vim.notify("[odoo-ide] Database " .. dbname .. " reset with " .. modules, vim.log.levels.INFO)
+        else
+          vim.notify("[odoo-ide] Failed to reset database", vim.log.levels.ERROR)
+        end
+      end)
+    end)
+  end)
+end
+
+function M.scaffold(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return
+  end
+
+  local module_name = opts.module_name
+  if not module_name then
+    vim.notify("[odoo-ide] Module name required. Use --module-name", vim.log.levels.ERROR)
+    return
+  end
+
+  local target_path = opts.path
+  if not target_path then
+    target_path = root .. "/odoo/custom/src/private"
+  end
+
+  local cmd = {
+    "docker",
+    "compose",
+    "run",
+    "--rm",
+    "-v",
+    root .. ":/tmp/project:rw",
+    "odoo",
+    "odoo",
+    "scaffold",
+    module_name,
+    "/tmp/project/" .. target_path,
+  }
+
+  vim.system(cmd, { cwd = root }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Module " .. module_name .. " scaffolded at " .. target_path, vim.log.levels.INFO)
+    else
+      vim.notify("[odoo-ide] Failed to scaffold module", vim.log.levels.ERROR)
+    end
+  end)
+end
+
+function M.start_debug(opts)
+  opts = opts or {}
+  local root = find_project_root()
+  if not root then
+    vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
+    return nil
+  end
+
+  local odoo_version = opts.odoo_version or 17.0
+  local port = math.floor(odoo_version) * 1000 + 899
+
+  -- Prefer invoke (standard Doodba)
+  if vim.fn.executable("invoke") == 1 then
+    local cmd = { "invoke", "start", "--detach", "--debugpy" }
+    local handle = vim.system(cmd, { cwd = root, text = true, timeout = 120000 }, function(handler)
+      if handler.code == 0 then
+        vim.notify("[odoo-ide] Odoo started with debugpy on :" .. port, vim.log.levels.INFO)
+      else
+        local err = handler.stderr or ""
+        local out = handler.stdout or ""
+        vim.notify(
+          "[odoo-ide] invoke start --debugpy failed (code=" .. handler.code .. ")\n"
+            .. "stderr: " .. (err ~= "" and err or "(none)") .. "\n"
+            .. "stdout: " .. (out ~= "" and out or "(none)"),
+          vim.log.levels.ERROR
+        )
+      end
+    end)
+    return handle
+  end
+
+  -- Fallback: docker compose with ODOO_DEBUG + port mapping
+  local cmd = {
+    "docker", "compose", "up", "--detach",
+    "--no-recreate",
+  }
+
+  local env = vim.deepcopy(vim.fn.environ())
+  env["ODOO_DEBUG"] = "true"
+  env["PYDEV_DEBUG"] = "true"
+
+  local handle = vim.system(cmd, {
+    cwd = root,
+    env = env,
+    text = true,
+    timeout = 120000,
+  }, function(handler)
+    if handler.code == 0 then
+      vim.notify("[odoo-ide] Odoo started. For debugpy, ensure compose exposes :" .. port, vim.log.levels.INFO)
+    else
+      local err = handler.stderr or ""
+      local out = handler.stdout or ""
+      vim.notify(
+        "[odoo-ide] docker compose up failed (code=" .. handler.code .. ")\n"
+          .. "stderr: " .. (err ~= "" and err or "(none)") .. "\n"
+          .. "stdout: " .. (out ~= "" and out or "(none)"),
+        vim.log.levels.ERROR
+      )
+    end
+  end)
+
+  return handle
+end
+
+function M.setup_commands()
+  vim.api.nvim_create_user_command("OdooTest", function(cmd_opts)
+    local opts = {}
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      for key, value in cmd_opts.args:gmatch("(%w+)=([^%s]+)") do
+        opts[key] = value
+      end
+    end
+    M.test(opts)
+  end, {
+    nargs = "*",
+    desc = "Run tests for current Odoo module",
+  })
+
+  vim.api.nvim_create_user_command("OdooInstall", function(cmd_opts)
+    local opts = {}
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      for key, value in cmd_opts.args:gmatch("(%w+)=([^%s]+)") do
+        opts[key] = value
+      end
+    end
+    M.install(opts)
+  end, {
+    nargs = "*",
+    desc = "Install current Odoo module",
+  })
+
+  vim.api.nvim_create_user_command("OdooUninstall", function(cmd_opts)
+    local opts = {}
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      for key, value in cmd_opts.args:gmatch("(%w+)=([^%s]+)") do
+        opts[key] = value
+      end
+    end
+    M.uninstall(opts)
+  end, {
+    nargs = "*",
+    desc = "Uninstall current Odoo module",
+  })
+
+  vim.api.nvim_create_user_command("OdooLogs", function(cmd_opts)
+    local opts = { tail = 50 }
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      local tail = cmd_opts.args:match("tail=(%d+)")
+      if tail then
+        opts.tail = tonumber(tail)
+      end
+    end
+    M.logs(opts)
+  end, {
+    nargs = "?",
+    desc = "Show Odoo logs",
+  })
+
+  vim.api.nvim_create_user_command("OdooStart", function()
+    M.start()
+  end, {
+    desc = "Start Odoo environment",
+  })
+
+  vim.api.nvim_create_user_command("OdooStop", function()
+    M.stop()
+  end, {
+    desc = "Stop Odoo environment",
+  })
+
+  vim.api.nvim_create_user_command("OdooRestart", function()
+    M.restart()
+  end, {
+    desc = "Restart Odoo",
+  })
+
+  vim.api.nvim_create_user_command("OdooResetDB", function(cmd_opts)
+    local opts = { dbname = "devel", modules = "base" }
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      local dbname = cmd_opts.args:match("dbname=([^%s]+)")
+      local modules = cmd_opts.args:match("modules=([^%s]+)")
+      if dbname then
+        opts.dbname = dbname
+      end
+      if modules then
+        opts.modules = modules
+      end
+    end
+    M.resetdb(opts)
+  end, {
+    nargs = "?",
+    desc = "Reset database",
+  })
+
+  vim.api.nvim_create_user_command("OdooScaffold", function(cmd_opts)
+    local opts = {}
+    if cmd_opts.args and cmd_opts.args ~= "" then
+      local module_name = cmd_opts.args:match("module_name=([^%s]+)")
+      local path = cmd_opts.args:match("path=([^%s]+)")
+      if module_name then
+        opts.module_name = module_name
+      end
+      if path then
+        opts.path = path
+      end
+    end
+    M.scaffold(opts)
+  end, {
+    nargs = "*",
+    desc = "Scaffold a new Odoo module",
+  })
+end
+
+return M
