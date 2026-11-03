@@ -73,16 +73,7 @@ function M.generate_odools_config(opts)
     return
   end
 
-  local doodba = require("odoo-ide.doodba")
-  if not doodba.is_doodba() then
-    vim.notify("odoo-ide: Not in a Doodba project", vim.log.levels.WARN)
-    return
-  end
-
-  opts = opts or {}
-  opts.force_regenerate = opts.force or true
-
-  local success, result = M.odools.write_config(opts)
+  local success, result = M.odools.write_config(opts or {})
   if success then
     vim.notify("odoo-ide: Generated odools.toml at " .. result, vim.log.levels.INFO)
   else
