@@ -8,6 +8,7 @@ local utils = require("odoo-ide.utils")
 M._cache = {
   version = nil,
   manifest_path = nil,
+  dir = nil,
   last_check = 0,
 }
 
@@ -45,21 +46,29 @@ end
 ---Detect Odoo version from __manifest__.py
 ---@return number|nil version (e.g., 17, 18, 16)
 function M.get_odoo_version()
+  local current_dir = utils.get_current_dir()
   local now = os.time()
-  
-  -- Return cached version if still valid
-  if M._cache.version and (now - M._cache.last_check) < CACHE_TTL then
+
+  -- Keyed by directory: switching projects must never return a stale version.
+  if M._cache.dir == current_dir and (now - M._cache.last_check) < CACHE_TTL then
     return M._cache.version
   end
-  
+
+  M._cache.dir = current_dir
+  M._cache.last_check = now
+
   local manifest = M.find_manifest()
   if not manifest then
+    M._cache.version = nil
+    M._cache.manifest_path = nil
     return nil
   end
   
   -- Read manifest content
   local file = io.open(manifest, "r")
   if not file then
+    M._cache.version = nil
+    M._cache.manifest_path = manifest
     return nil
   end
   
@@ -70,13 +79,13 @@ function M.get_odoo_version()
   
   if version_str then
     local version = tonumber(version_str)
-    -- Update cache
     M._cache.version = version
     M._cache.manifest_path = manifest
-    M._cache.last_check = now
     return version
   end
-  
+
+  M._cache.version = nil
+  M._cache.manifest_path = manifest
   return nil
 end
 
