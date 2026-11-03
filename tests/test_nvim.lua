@@ -1,70 +1,104 @@
--- Test script for odoo-ide.nvim
--- Run with: nvim -u NONE -l tests/test_nvim.lua
+-- Portable smoke tests for the public module surface.
+--
+-- Verifies that every module loads, that setup() runs outside a project, and
+-- that the user-facing commands exist. Snippet assertions are skipped when
+-- LuaSnip is not installed.
+--
+-- Run with: nvim --headless -u NONE -l tests/test_nvim.lua
 
--- Add plugin to rtp
-vim.opt.rtp:prepend("/home/adruban/Workspace/Personal/odoo-ide.nvim")
+local script = debug.getinfo(1, "S").source:sub(2)
+local plugin_root = vim.fn.fnamemodify(script, ":p:h:h")
+vim.opt.rtp:prepend(plugin_root)
 
-print("=== Testing odoo-ide.nvim in Neovim ===\n")
+local failures = 0
 
-local ok, odoo_ide = pcall(require, "odoo-ide")
-if not ok then
-  print("ERROR: Could not load odoo-ide module")
-  print(odoo_ide)
-  os.exit(1)
-end
-print("✓ odoo-ide module loaded")
-
-local context_ok, context = pcall(require, "odoo-ide.context")
-if not context_ok then
-  print("ERROR: Could not load context module")
-  os.exit(1)
-end
-print("✓ context module loaded")
-
-vim.cmd("cd /home/adruban/Workspace/Doodba_ENV/O17/odoo/custom/src/private/l10n_cl_fintoc/models")
-vim.cmd("edit fintoc_account_bank_request.py")
-
-print("\n--- Testing context detection ---")
-local ctx = context.get_context()
-print("Version: " .. tostring(ctx.version))
-print("Location: " .. ctx.location)
-print("Filetype: " .. ctx.filetype)
-print("Model name: " .. tostring(ctx.model.name))
-print("Model type: " .. ctx.model.type)
-print("Fields count: " .. #ctx.model.fields)
-
-if ctx.version == 17 then
-  print("\n✓ Version detection PASSED (expected 17)")
-else
-  print("\n✗ Version detection FAILED (expected 17, got " .. tostring(ctx.version) .. ")")
+local function check(label, expected, actual)
+  local ok = expected == actual
+  print((ok and "PASS" or "FAIL") .. ": " .. label)
+  if not ok then
+    print("  expected: " .. vim.inspect(expected))
+    print("  actual:   " .. vim.inspect(actual))
+    failures = failures + 1
+  end
 end
 
-if ctx.location == "models" then
-  print("✓ Location detection PASSED (expected models)")
-else
-  print("✗ Location detection FAILED (expected models, got " .. ctx.location .. ")")
+local function check_true(label, condition, detail)
+  print((condition and "PASS" or "FAIL") .. ": " .. label)
+  if not condition then
+    if detail then
+      print("  detail: " .. vim.inspect(detail))
+    end
+    failures = failures + 1
+  end
 end
 
-print("\n--- Checking LuaSnip availability ---")
+-- Modules that must always load without optional dependencies.
+for _, name in ipairs({
+  "odoo-ide",
+  "odoo-ide.config",
+  "odoo-ide.context",
+  "odoo-ide.doodba",
+  "odoo-ide.odools",
+  "odoo-ide.pyright",
+  "odoo-ide.tasks",
+  "odoo-ide.lsp",
+  "odoo-ide.dap",
+  "odoo-ide.ui",
+  "odoo-ide.utils",
+}) do
+  local ok, mod = pcall(require, name)
+  check_true("module loads: " .. name, ok and type(mod) == "table", mod)
+end
+
+-- Snippets only load with LuaSnip present.
 local luasnip_ok = pcall(require, "luasnip")
 if luasnip_ok then
-  print("✓ LuaSnip available")
-  
-  odoo_ide.setup()
-  print("✓ odoo-ide.setup() completed")
-  
-  local ls = require("luasnip")
-  local snippets = ls.get_snippets("python")
-  local odoo_count = 0
-  for _, snip in ipairs(snippets) do
-    if snip.trigger and snip.trigger:match("^oo") then
-      odoo_count = odoo_count + 1
-    end
-  end
-  print("Odoo snippets loaded: " .. odoo_count)
+  local ok, mod = pcall(require, "odoo-ide.snippets")
+  check_true("module loads: odoo-ide.snippets", ok and type(mod) == "table", mod)
 else
-  print("⚠ LuaSnip not available - skipping snippet tests")
-  print("  (This is normal when running outside of Neovim config)")
+  print("SKIP: odoo-ide.snippets (LuaSnip not available)")
 end
 
-print("\n=== Tests Complete ===")
+-- setup() must not error outside a project nor start any server.
+local odoo_ide = require("odoo-ide")
+local ok, err = pcall(function()
+  odoo_ide.setup({
+    snippets = { enabled = false },
+    lsp = { enabled = false },
+    dap = { enabled = false },
+    ruff = { enabled = false },
+  })
+end)
+check("setup outside project", nil, ok and nil or err)
+
+-- Commands registered by setup() and by the module entry point.
+for _, command in ipairs({
+  "OdooHelp",
+  "OdooTest",
+  "OdooInstall",
+  "OdooUninstall",
+  "OdooLogs",
+  "OdooStart",
+  "OdooStop",
+  "OdooRestart",
+  "OdooResetDB",
+  "OdooScaffold",
+  "OdooGenerateConfig",
+  "OdooShowConfig",
+  "OdooGeneratePyrightConfig",
+}) do
+  check("command exists: " .. command, 2, vim.fn.exists(":" .. command))
+end
+
+-- Public helpers are callable and degrade outside a project.
+check("not in Doodba", nil, require("odoo-ide.doodba").find_root())
+check("not an Odoo project", false, odoo_ide.context.is_odoo_project())
+check("context fields", "table", type(odoo_ide.context.get_context()))
+
+print("")
+if failures == 0 then
+  print("=== All smoke tests passed ===")
+else
+  print("=== " .. failures .. " smoke test(s) failed ===")
+  os.exit(1)
+end

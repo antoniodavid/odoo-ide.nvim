@@ -1,126 +1,176 @@
--- Test script for context detection module
--- Run with: nvim --headless -u NONE -c "lua dofile('tests/test_context.lua')"
+-- Portable regression tests for context detection.
+--
+-- Every fixture is created in a temporary directory, so the suite runs on any
+-- machine and never depends on a real Odoo checkout.
+--
+-- Run with: nvim --headless -u NONE -l tests/test_context.lua
 
--- Add plugin to path
-package.path = package.path .. ";./lua/?.lua;./lua/?/init.lua"
+local script = debug.getinfo(1, "S").source:sub(2)
+local plugin_root = vim.fn.fnamemodify(script, ":p:h:h")
+vim.opt.rtp:prepend(plugin_root)
 
 local context = require("odoo-ide.context")
 
--- Mock vim functions for headless testing
-if not vim then
-  vim = {
-    fn = {
-      expand = function(s)
-        if s == "%:p:h" or s == "%:p" then
-          return "/home/adruban/Workspace/Doodba_ENV/O17/odoo/custom/src/private/l10n_cl_fintoc/models"
-        end
-        return ""
-      end,
-      findfile = function(name, path)
-        if name == "__manifest__.py" then
-          return "/home/adruban/Workspace/Doodba_ENV/O17/odoo/custom/src/private/l10n_cl_fintoc/__manifest__.py"
-        end
-        return ""
-      end,
-      fnamemodify = function(path, mod)
-        if mod == ":p" then return path end
-        if mod == ":h" then return path:match("(.*/)")  end
-        return path
-      end,
-    },
-    api = {
-      nvim_buf_get_lines = function()
-        return {
-          "from odoo import fields, models",
-          "",
-          "class FintocAccountBankRequest(models.Model):",
-          "    _name = 'fintoc.account.bank.request'",
-          "    _description = 'Accounts registered in fintoc'",
-          "    name = fields.Char(string='Code')",
-          "    bank_id = fields.Many2one('res.bank')",
-          "    amount = fields.Float(compute='_compute_amount')",
-        }
-      end,
-    },
-    bo = {
-      filetype = "python"
-    },
-    notify = function(msg, level)
-      print("[NOTIFY] " .. tostring(msg))
-    end,
-    inspect = function(t)
-      local function serialize(tbl, indent)
-        indent = indent or ""
-        local result = "{\n"
-        for k, v in pairs(tbl) do
-          result = result .. indent .. "  " .. tostring(k) .. " = "
-          if type(v) == "table" then
-            result = result .. serialize(v, indent .. "  ")
-          else
-            result = result .. tostring(v)
-          end
-          result = result .. ",\n"
-        end
-        return result .. indent .. "}"
-      end
-      return serialize(t)
-    end,
-    loop = {
-      now = function() return os.time() * 1000 end
-    }
-  }
+local failures = 0
+
+local function check(label, expected, actual)
+  local ok = expected == actual
+  print((ok and "PASS" or "FAIL") .. ": " .. label)
+  if not ok then
+    print("  expected: " .. vim.inspect(expected))
+    print("  actual:   " .. vim.inspect(actual))
+    failures = failures + 1
+  end
 end
 
-print("=== Testing odoo-ide.nvim context module ===\n")
+local function check_true(label, condition, detail)
+  print((condition and "PASS" or "FAIL") .. ": " .. label)
+  if not condition then
+    if detail then
+      print("  detail: " .. vim.inspect(detail))
+    end
+    failures = failures + 1
+  end
+end
 
--- Test 1: find_manifest
-print("Test 1: find_manifest()")
-local manifest = context.find_manifest()
-print("  Result: " .. tostring(manifest))
-assert(manifest ~= nil, "FAIL: manifest should not be nil")
-print("  PASS\n")
+local function write_file(path, content)
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  local fd = assert(io.open(path, "w"))
+  fd:write(content)
+  fd:close()
+end
 
--- Test 2: get_odoo_version
-print("Test 2: get_odoo_version()")
-local version = context.get_odoo_version()
-print("  Result: " .. tostring(version))
-assert(version == 17, "FAIL: version should be 17, got " .. tostring(version))
-print("  PASS\n")
+local function edit(path)
+  vim.cmd("edit " .. vim.fn.fnameescape(path))
+end
 
--- Test 3: get_file_location
-print("Test 3: get_file_location()")
-local location = context.get_file_location()
-print("  Result: " .. tostring(location))
-assert(location == "models", "FAIL: location should be 'models', got " .. tostring(location))
-print("  PASS\n")
+-- The version cache is process-wide and keyed by directory, so clear it
+-- between fixtures to make each scenario independent of the previous one.
+local function reset_cache()
+  context._cache.version = nil
+  context._cache.manifest_path = nil
+  context._cache.dir = nil
+  context._cache.last_check = 0
+end
 
--- Test 4: get_model_info
-print("Test 4: get_model_info()")
-local model_info = context.get_model_info()
-print("  name: " .. tostring(model_info.name))
-print("  type: " .. tostring(model_info.type))
-print("  fields: " .. #model_info.fields)
-assert(model_info.name == "fintoc.account.bank.request", "FAIL: model name mismatch")
-assert(model_info.type == "Model", "FAIL: model type should be Model")
-print("  PASS\n")
+local base = vim.fn.fnamemodify(vim.fn.tempname(), ":p:h") .. "/odoo-ide-context-test"
+vim.fn.delete(base, "rf")
 
--- Test 5: find_orphan_computes  
-print("Test 5: find_orphan_computes()")
+local addon = base .. "/addons/test_addon"
+local model_file = addon .. "/models/test_model.py"
+
+write_file(addon .. "/__manifest__.py", "{'name': 'test_addon', 'version': '16.0.1.0.0'}\n")
+write_file(
+  model_file,
+  table.concat({
+    "from odoo import api, fields, models",
+    "",
+    "",
+    "class TestModel(models.Model):",
+    '    _name = "test.model"',
+    '    _description = "Test Model"',
+    '    _inherit = "mail.thread"',
+    "",
+    '    name = fields.Char(string="Name")',
+    '    amount = fields.Float(compute="_compute_amount")',
+    '    total = fields.Float(compute="_compute_total")',
+    "",
+    '    @api.depends("name")',
+    "    def _compute_amount(self):",
+    "        for record in self:",
+    "            record.amount = 0.0",
+    "",
+  }, "\n")
+)
+
+-- Manifest discovery and version detection.
+edit(model_file)
+check("manifest discovery", addon .. "/__manifest__.py", context.find_manifest())
+check("addon root", addon, context.get_addon_root())
+check("Odoo version", 16, context.get_odoo_version())
+check("is Odoo project", true, context.is_odoo_project())
+
+-- File location classification.
+local locations = {
+  { "models/other_model.py", "models" },
+  { "wizards/test_wizard.py", "wizards" },
+  { "controllers/main.py", "controllers" },
+  { "tests/test_flow.py", "tests" },
+  { "views/test_model_views.xml", "views" },
+  { "security/ir.model.access.csv", "security" },
+  { "data/test_data.xml", "data" },
+  { "demo/test_demo.xml", "demo" },
+  { "reports/test_report.xml", "reports" },
+  { "static/src/js/test.js", "static" },
+  { "__manifest__.py", "other" },
+  { "README.rst", "other" },
+}
+
+for _, case in ipairs(locations) do
+  local path = addon .. "/" .. case[1]
+  write_file(path, "\n")
+  edit(path)
+  check("file location: " .. case[1], case[2], context.get_file_location())
+end
+
+-- Model introspection.
+edit(model_file)
+local info = context.get_model_info()
+check("model name", "test.model", info.name)
+check("model inherit", "mail.thread", info.inherit)
+check("model type", "Model", info.type)
+check("model field count", 3, #info.fields)
+check("model has compute", true, context.has_compute_method("amount"))
+check("model missing compute", false, context.has_compute_method("total"))
+
 local orphans = context.find_orphan_computes()
-print("  Orphan computes found: " .. #orphans)
-for _, o in ipairs(orphans) do
-  print("    - " .. o.method .. " (field: " .. o.field .. ")")
+check("orphan compute count", 1, #orphans)
+if orphans[1] then
+  check("orphan compute method", "_compute_total", orphans[1].method)
+  check("orphan compute field", "total", orphans[1].field)
 end
-assert(#orphans >= 1, "FAIL: should find at least 1 orphan compute")
-print("  PASS\n")
 
--- Test 6: get_context (full)
-print("Test 6: get_context() - Full context")
-local ctx = context.get_context()
-print("  version: " .. tostring(ctx.version))
-print("  location: " .. tostring(ctx.location))
-print("  model.name: " .. tostring(ctx.model.name))
-print("  filetype: " .. tostring(ctx.filetype))
-print("  PASS\n")
+-- A wizard in the same addon reports its own model type.
+local wizard_file = addon .. "/wizards/test_wizard.py"
+write_file(
+  wizard_file,
+  table.concat({
+    "from odoo import fields, models",
+    "",
+    "",
+    "class TestWizard(models.TransientModel):",
+    '    _name = "test.wizard"',
+    "",
+    '    name = fields.Char()',
+    "",
+  }, "\n")
+)
+edit(wizard_file)
+check("wizard model type", "TransientModel", context.get_model_info().type)
 
-print("=== All tests passed! ===")
+-- A second project with a different version must not reuse the previous cache.
+local other_addon = base .. "/addons/other_addon"
+write_file(other_addon .. "/__manifest__.py", "{'name': 'other_addon', 'version': '18.0.2.0.0'}\n")
+write_file(other_addon .. "/models/other.py", "from odoo import models\n")
+edit(other_addon .. "/models/other.py")
+reset_cache()
+check("Odoo version after project switch", 18, context.get_odoo_version())
+
+-- Outside any addon the context degrades gracefully instead of erroring.
+local plain = base .. "/plain"
+write_file(plain .. "/notes.txt", "hello\n")
+edit(plain .. "/notes.txt")
+check("no manifest outside addon", nil, context.find_manifest())
+check("not an Odoo project", false, context.is_odoo_project())
+check("location outside addon", "other", context.get_file_location())
+check("version outside addon", nil, context.get_odoo_version())
+
+vim.fn.delete(base, "rf")
+
+print("")
+if failures == 0 then
+  print("=== All context tests passed ===")
+else
+  print("=== " .. failures .. " context test(s) failed ===")
+  os.exit(1)
+end
