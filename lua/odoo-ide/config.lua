@@ -53,10 +53,8 @@ M.defaults = {
   },
   -- odools.toml generation options
   odools = {
-    -- Auto-generate odools.toml when entering Doodba project
+    -- Auto-generate odools.toml when entering an Odoo project
     auto_generate = true,
-    -- Force regenerate even if file exists (always overwrite)
-    force_regenerate = true,
     -- Output path relative to project root (nil = project root)
     output_path = nil,
   },
