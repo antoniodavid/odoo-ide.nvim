@@ -333,6 +333,35 @@ function M.resetdb(opts)
   end)
 end
 
+---Map a host path to its location inside the scaffold container.
+---
+---The project root is mounted at `/tmp/project`, so an absolute path under the
+---root must lose its prefix; otherwise the generated path resolves outside the
+---mount and `odoo scaffold` fails.
+---@param root string Absolute project root
+---@param target string Absolute path under the root, or a project-relative path
+---@return string|nil container_path
+---@return string|nil err
+function M.container_path(root, target)
+  if not root or not target then
+    return nil, "Missing project root or target path"
+  end
+
+  local normalized_root = vim.fs.normalize(root)
+  local normalized_target = vim.fs.normalize(target)
+
+  local prefix = normalized_root .. "/"
+  if normalized_target:sub(1, #prefix) == prefix then
+    return "/tmp/project/" .. normalized_target:sub(#prefix + 1)
+  end
+
+  if normalized_target:sub(1, 1) == "/" then
+    return nil, "Target path is outside the project root: " .. normalized_target
+  end
+
+  return "/tmp/project/" .. normalized_target:gsub("^%./", "")
+end
+
 function M.scaffold(opts)
   opts = opts or {}
   local root = find_project_root()
@@ -352,6 +381,12 @@ function M.scaffold(opts)
     target_path = root .. "/odoo/custom/src/private"
   end
 
+  local container_target, path_err = M.container_path(root, target_path)
+  if not container_target then
+    vim.notify("[odoo-ide] " .. path_err, vim.log.levels.ERROR)
+    return
+  end
+
   local cmd = {
     "docker",
     "compose",
@@ -363,7 +398,7 @@ function M.scaffold(opts)
     "odoo",
     "scaffold",
     module_name,
-    "/tmp/project/" .. target_path,
+    container_target,
   }
 
   vim.system(cmd, { cwd = root }, function(handler)
