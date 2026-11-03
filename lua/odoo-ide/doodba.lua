@@ -9,17 +9,28 @@ local function dir_exists(path)
   return vim.fn.isdirectory(path) == 1
 end
 
-function M.find_root()
-  local current = utils.get_current_dir()
+---Find the root of the surrounding Doodba environment.
+---@param start? string Directory to start from (defaults to the current buffer directory)
+---@return string|nil root
+function M.find_root(start)
+  local current = start or utils.get_current_dir()
 
-  local root = vim.fs.find("common.yaml", { path = current, upward = true, type = "file" })[1]
-  if root then
-    return vim.fs.dirname(root)
+  local common = vim.fs.find("common.yaml", { path = current, upward = true, type = "file" })[1]
+  if common then
+    return vim.fn.fnamemodify(common, ":h")
   end
-  
-  root = vim.fs.find("docker-compose.yml", { path = current, upward = true, type = "file" })[1]
-  if root then
-    return vim.fs.dirname(root)
+
+  -- A docker-compose.yml alone is not a Doodba environment: plenty of
+  -- unrelated projects have one. Require the Doodba source layout too.
+  local dirs = { current }
+  for parent in vim.fs.parents(current) do
+    table.insert(dirs, parent)
+  end
+
+  for _, dir in ipairs(dirs) do
+    if file_exists(dir .. "/docker-compose.yml") and dir_exists(dir .. "/odoo/custom/src") then
+      return vim.fs.normalize(dir)
+    end
   end
 
   return nil

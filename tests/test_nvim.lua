@@ -45,6 +45,7 @@ for _, name in ipairs({
   "odoo-ide.dap",
   "odoo-ide.ui",
   "odoo-ide.utils",
+  "odoo-ide.project",
 }) do
   local ok, mod = pcall(require, name)
   check_true("module loads: " .. name, ok and type(mod) == "table", mod)
@@ -92,6 +93,7 @@ end
 
 -- Public helpers are callable and degrade outside a project.
 check("not in Doodba", nil, require("odoo-ide.doodba").find_root())
+check("no project detected", nil, require("odoo-ide.project").get())
 check("not an Odoo project", false, odoo_ide.context.is_odoo_project())
 check("context fields", "table", type(odoo_ide.context.get_context()))
 
