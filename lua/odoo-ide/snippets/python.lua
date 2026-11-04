@@ -40,17 +40,17 @@ table.insert(python_snippets, s({
       return sn(nil, {
         t({ "@api.model_create_multi", "" }),
         t("def create(self, vals_list):"),
-        t({ "", "\t" }),
+        t({ "", "    " }),
         i(1),
-        t({ "", "\treturn super().create(vals_list)" }),
+        t({ "", "    return super().create(vals_list)" }),
       })
     else
       return sn(nil, {
         t({ "@api.model", "" }),
         t("def create(self, vals):"),
-        t({ "", "\t" }),
+        t({ "", "    " }),
         i(1),
-        t({ "", "\treturn super(" }),
+        t({ "", "    return super(" }),
         f(function() return get_model_class() end, {}),
         t(", self).create(vals)"),
       })
@@ -63,9 +63,9 @@ table.insert(python_snippets, s({
   name = "Write Method",
   dscr = "Override write()",
 }, {
-  t({ "def write(self, vals):", "\t" }),
+  t({ "def write(self, vals):", "    " }),
   i(1),
-  t({ "", "\treturn super().write(vals)" }),
+  t({ "", "    return super().write(vals)" }),
 }))
 
 table.insert(python_snippets, s({
@@ -73,9 +73,9 @@ table.insert(python_snippets, s({
   name = "Unlink Method",
   dscr = "Override unlink()",
 }, {
-  t({ "def unlink(self):", "\t" }),
+  t({ "def unlink(self):", "    " }),
   i(1),
-  t({ "", "\treturn super().unlink()" }),
+  t({ "", "    return super().unlink()" }),
 }))
 
 table.insert(python_snippets, s({
@@ -129,15 +129,15 @@ table.insert(python_snippets, s({
     t("TransientModel"),
     t("AbstractModel"),
   }),
-  t({ "):", "\t_name = '" }),
+  t({ "):", "    _name = '" }),
   i(1, "model.name"),
-  t({ "'", "\t_description = _(" }),
+  t({ "'", "    _description = _(" }),
   d(4, function(args)
     local name = args[1][1] or "Model"
     local desc = name:gsub("%.", " "):gsub("^%l", string.upper)
     return sn(nil, { t("'" .. desc .. "'") })
   end, { 1 }),
-  t({ ")", "", "\t" }),
+  t({ ")", "", "    " }),
   i(0),
 }))
 
@@ -186,7 +186,7 @@ table.insert(python_snippets, s({
 }, {
   i(1, "field_id"),
   t(" = fields.Many2one("),
-  t({ "\tcomodel_name='" }),
+  t({ "    comodel_name='" }),
   i(2, "model.name"),
   t({ "',", ")" }),
 }))
@@ -197,9 +197,9 @@ table.insert(python_snippets, s({
   dscr = "fields.One2many",
 }, {
   i(1, "line_ids"),
-  t({ " = fields.One2many(", "\tcomodel_name='" }),
+  t({ " = fields.One2many(", "    comodel_name='" }),
   i(2, "model.line"),
-  t({ "',", "\tinverse_name='" }),
+  t({ "',", "    inverse_name='" }),
   i(3, "parent_id"),
   t({ "',", ")" }),
 }))
@@ -210,7 +210,7 @@ table.insert(python_snippets, s({
   dscr = "fields.Many2many",
 }, {
   i(1, "tag_ids"),
-  t({ " = fields.Many2many(", "\tcomodel_name='" }),
+  t({ " = fields.Many2many(", "    comodel_name='" }),
   i(2, "model.name"),
   t({ "',", ")" }),
 }))
@@ -232,13 +232,13 @@ table.insert(python_snippets, s({
     t("Monetary"),
     t("Text"),
   }),
-  t({ "(", "\tcompute='_compute_" }),
+  t({ "(", "    compute='_compute_" }),
   f(function(args) return args[1][1] or "field_name" end, { 1 }),
   t({ "',", ")", "", "", "@api.depends('" }),
   i(3, "depends_field"),
   t({ "')", "def _compute_" }),
   f(function(args) return args[1][1] or "field_name" end, { 1 }),
-  t({ "(self):", "\tfor record in self:", "\t\trecord." }),
+  t({ "(self):", "    for record in self:", "        record." }),
   f(function(args) return args[1][1] or "field_name" end, { 1 }),
   t(" = "),
   i(0),
@@ -253,9 +253,9 @@ table.insert(python_snippets, s({
   i(1, "field_name"),
   t({ "')", "def _check_" }),
   f(function(args) return args[1][1] or "field" end, { 1 }),
-  t({ "(self):", "\tfor rec in self:", "\t\tif " }),
+  t({ "(self):", "    for rec in self:", "        if " }),
   i(2, "condition"),
-  t({ ":", "\t\t\traise ValidationError(_('Error message'))" }),
+  t({ ":", "            raise ValidationError(_('Error message'))" }),
 }))
 
 table.insert(python_snippets, s({
@@ -267,7 +267,7 @@ table.insert(python_snippets, s({
   i(1, "field_name"),
   t({ "')", "def _onchange_" }),
   f(function(args) return args[1][1] or "field" end, { 1 }),
-  t({ "(self):", "\t" }),
+  t({ "(self):", "    " }),
   i(0),
 }))
 
@@ -276,7 +276,7 @@ table.insert(python_snippets, s({
   name = "SQL Constraints",
   dscr = "_sql_constraints list",
 }, {
-  t({ "_sql_constraints = [", "\t('" }),
+  t({ "_sql_constraints = [", "    ('" }),
   i(1, "constraint_name"),
   t("', '"),
   c(2, { t("unique"), t("check") }),
@@ -292,21 +292,21 @@ table.insert(python_snippets, s({
   name = "Manifest File",
   dscr = "Standard OCA __manifest__.py",
 }, {
-  t({ "{", "\t'name': '" }),
+  t({ "{", "    'name': '" }),
   i(1, "Module Name"),
-  t({ "',", "\t'summary': '" }),
+  t({ "',", "    'summary': '" }),
   i(2, "Module Summary"),
-  t({ "',", "\t'version': '" }),
+  t({ "',", "    'version': '" }),
   f(function() return get_version() .. ".0.1.0.0" end, {}),
-  t({ "',", "\t'category': '" }),
+  t({ "',", "    'category': '" }),
   i(3, "Uncategorized"),
-  t({ "',", "\t'website': 'https://github.com/OCA/", }),
+  t({ "',", "    'website': 'https://github.com/OCA/", }),
   i(4, "repo-name"),
-  t({ "',", "\t'author': 'Your Name, Odoo Community Association (OCA)',", "\t'license': 'AGPL-3',", "\t'application': False,", "\t'installable': True,", "\t'depends': [", "\t\t'" }),
+  t({ "',", "    'author': 'Your Name, Odoo Community Association (OCA)',", "    'license': 'AGPL-3',", "    'application': False,", "    'installable': True,", "    'depends': [", "        '" }),
   i(5, "base"),
-  t({ "',", "\t],", "\t'data': [", "\t\t" }),
+  t({ "',", "    ],", "    'data': [", "        " }),
   i(0),
-  t({ "", "\t],", "}" }),
+  t({ "", "    ],", "}" }),
 }))
 
 function M.setup()

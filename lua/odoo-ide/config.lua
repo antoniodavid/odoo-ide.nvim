@@ -18,6 +18,8 @@ M.defaults = {
     -- Disabled by default - use odoo_ls instead for Odoo projects
     pyright = {
       enabled = false,
+      -- Python version advertised to pyright
+      python_version = "3.10",
     },
     -- Configure odoo-ls (official Odoo Language Server)
     odoo_ls = {
@@ -60,8 +62,6 @@ M.defaults = {
   },
   -- odools.toml generation options
   odools = {
-    -- Auto-generate odools.toml when entering an Odoo project
-    auto_generate = true,
     -- Output path relative to project root (nil = project root)
     output_path = nil,
   },

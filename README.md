@@ -84,6 +84,7 @@ require("odoo-ide").setup({
     capabilities = nil,
     pyright = {
       enabled = false, -- odoo-ls is the recommended server for Odoo projects
+      python_version = "3.10",
     },
     odoo_ls = {
       enabled = true,

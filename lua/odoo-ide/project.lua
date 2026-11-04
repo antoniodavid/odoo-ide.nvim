@@ -114,11 +114,27 @@ local function addons_from_conf(path)
   return paths
 end
 
+---Whether `path` lives inside `base`.
+---@param path string
+---@param base string
+---@return boolean
+local function is_inside(path, base)
+  local normalized_path = vim.fs.normalize(path)
+  local normalized_base = vim.fs.normalize(base)
+  return normalized_path:sub(1, #normalized_base + 1) == normalized_base .. "/"
+end
+
 ---Candidate paths for odoo.conf / .odoorc, in lookup order.
+---
+---Only configuration that belongs to the project is used. The user's global
+---`~/.odoorc` is deliberately excluded except for module-only repositories:
+---applying a global addons_path to a Doodba environment would inject the
+---addons of a different Odoo version into the project.
 ---@param root string|nil
 ---@param dir string
+---@param include_user_config boolean
 ---@return string[]
-local function conf_candidates(root, dir)
+local function conf_candidates(root, dir, include_user_config)
   local candidates = { dir .. "/odoo.conf" }
 
   if root and root ~= dir then
@@ -127,10 +143,16 @@ local function conf_candidates(root, dir)
 
   local env_conf = vim.env.ODOO_RC
   if env_conf and env_conf ~= "" then
-    table.insert(candidates, vim.fn.expand(env_conf))
+    local expanded = vim.fn.expand(env_conf)
+    if not root or is_inside(expanded, root) then
+      table.insert(candidates, expanded)
+    end
   end
 
-  table.insert(candidates, vim.fn.expand("~/.odoorc"))
+  if include_user_config then
+    table.insert(candidates, vim.fn.expand("~/.odoorc"))
+  end
+
   return candidates
 end
 
@@ -191,11 +213,12 @@ end
 ---Collect addons paths declared in Odoo configuration files.
 ---@param root string|nil
 ---@param dir string
+---@param include_user_config boolean
 ---@return string[]
-local function conf_paths(root, dir)
+local function conf_paths(root, dir, include_user_config)
   local seen, paths = {}, {}
 
-  for _, candidate in ipairs(conf_candidates(root, dir)) do
+  for _, candidate in ipairs(conf_candidates(root, dir, include_user_config)) do
     for _, path in ipairs(addons_from_conf(candidate)) do
       local absolute = vim.fs.normalize(path)
       if not seen[absolute] and dir_exists(absolute) then
@@ -221,7 +244,7 @@ function M.detect(opts)
   if doodba_root then
     local addons = doodba.get_paths()
     local odoo_path = doodba.find_odoo_path(doodba_root .. "/odoo/custom/src")
-    for _, path in ipairs(conf_paths(doodba_root, dir)) do
+    for _, path in ipairs(conf_paths(doodba_root, dir, false)) do
       table.insert(addons, path)
     end
     local version = version_from_common_yaml(doodba_root) or version_from_release(odoo_path)
@@ -232,7 +255,7 @@ function M.detect(opts)
   local checkout = find_checkout(dir)
   if checkout then
     local addons = {}
-    for _, path in ipairs(conf_paths(checkout, dir)) do
+    for _, path in ipairs(conf_paths(checkout, dir, false)) do
       table.insert(addons, path)
     end
     table.insert(addons, checkout .. "/addons")
@@ -243,7 +266,7 @@ function M.detect(opts)
   -- Plain addons repository: no Odoo core, only the modules being developed.
   local repo = find_addon_repo(dir)
   if repo then
-    local addons = conf_paths(repo, dir)
+    local addons = conf_paths(repo, dir, true)
     table.insert(addons, repo)
     return build("local", repo, nil, addons, nil)
   end

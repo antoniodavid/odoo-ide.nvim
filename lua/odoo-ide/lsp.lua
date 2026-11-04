@@ -144,7 +144,10 @@ function M.setup_pyright(opts, capabilities)
       end
 
       if opts.auto_config ~= false then
-        require("odoo-ide.pyright").ensure_config({ project = current })
+        require("odoo-ide.pyright").ensure_config({
+          project = current,
+          python_version = opts.python_version,
+        })
       end
 
       local paths = project.paths(current)

@@ -56,6 +56,11 @@ vim.env.HOME = base .. "/home"
 vim.env.ODOO_RC = ""
 vim.fn.mkdir(vim.env.HOME, "p")
 
+-- A global config whose addons_path belongs to a different Odoo installation.
+local global_addons = base .. "/global_addons"
+vim.fn.mkdir(global_addons, "p")
+write_file(vim.env.HOME .. "/.odoorc", "addons_path = " .. global_addons .. "\n")
+
 -- Doodba environment.
 local doodba_root = base .. "/doodba"
 write_file(doodba_root .. "/common.yaml", 'version: "2.4"\n\nservices:\n  odoo:\n    build:\n      args:\n        ODOO_VERSION: "17.0"\n')
@@ -79,6 +84,10 @@ check_true(
   "doodba: private addons path",
   doodba_project ~= nil
     and vim.tbl_contains(doodba_project.addons_paths, doodba_root .. "/odoo/custom/src/private")
+)
+check_true(
+  "doodba: global rc is ignored",
+  doodba_project ~= nil and not vim.tbl_contains(doodba_project.addons_paths, global_addons)
 )
 check_true("doodba: is_doodba", project.is_doodba(doodba_project))
 
@@ -105,6 +114,10 @@ check_true(
 check_true(
   "local: core addons path",
   local_project ~= nil and vim.tbl_contains(local_project.addons_paths, checkout .. "/odoo/addons")
+)
+check_true(
+  "local: global rc is ignored",
+  local_project ~= nil and not vim.tbl_contains(local_project.addons_paths, global_addons)
 )
 check_true("local: not doodba", not project.is_doodba(local_project))
 
@@ -133,6 +146,10 @@ check_true(
 check_true(
   "repo: missing conf path ignored",
   repo_project ~= nil and not vim.tbl_contains(repo_project.addons_paths, "/does/not/exist")
+)
+check_true(
+  "repo: global rc is used as fallback",
+  repo_project ~= nil and vim.tbl_contains(repo_project.addons_paths, global_addons)
 )
 
 -- A docker-compose.yml alone must not be treated as a Doodba environment.
