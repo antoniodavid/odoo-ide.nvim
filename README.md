@@ -79,6 +79,9 @@ require("odoo-ide").setup({
 
   lsp = {
     enabled = true,
+    -- Extra capabilities merged over Neovim's defaults, e.g.
+    -- require("blink.cmp").get_lsp_capabilities()
+    capabilities = nil,
     pyright = {
       enabled = false, -- odoo-ls is the recommended server for Odoo projects
     },
@@ -104,11 +107,13 @@ require("odoo-ide").setup({
     format_args = {},
     lint = "ruff",
     lint_args = {},
+    lint_on_save = false, -- run nvim-lint on every buffer write
   },
 
   dap = {
     enabled = true,
     debugpy_port = "auto", -- <ODOO_VERSION>000 + 899, e.g. 17899 for Odoo 17
+    keymap = true,         -- bind <leader>dD to start + attach
   },
 })
 ```
@@ -160,6 +165,9 @@ The Odoo version comes from `odoo/release.py` (`version_info`), or from
 `odoo-ls` starts whenever an Odoo source tree is found. Commands that drive
 Docker (`:OdooStart`, `:OdooTest`, `:OdooScaffold`, debugging) still require a
 Doodba environment, and say so when they are invoked elsewhere.
+
+`:OdooTest` and `:OdooLogs` stream their output into a terminal buffer, so the
+test run and the container log stay readable (and searchable) while they run.
 
 A local project does **not** get an `odools.toml` written into the checkout: that
 directory is usually a clone of Odoo itself, and dirtying it would be a
@@ -219,6 +227,17 @@ With `odoo-ls` installed you get:
 - Hover documentation
 - Diagnostics for common Odoo issues
 - XML view validation
+
+## Debugging
+
+The plugin registers its own `odoo-python` adapter and appends its
+configuration to `dap.configurations.python`, so an existing `python` adapter
+(for example from `nvim-dap-python`) keeps working. Path mappings cover the Odoo
+checkout, its core addons and every custom addon, matching what Doodba's own
+`tasks.py` generates for VS Code. The browser configuration is only offered when
+a `pwa-chrome` adapter is installed.
+
+See [DEBUGGING.md](DEBUGGING.md) for the step-by-step walkthrough.
 
 ## Tests
 

@@ -27,14 +27,6 @@ local function get_model_class()
   return "ClassName"
 end
 
-local function is_odoo()
-  return context.is_odoo_project()
-end
-
-local function only_odoo()
-  return is_odoo()
-end
-
 local python_snippets = {}
 
 table.insert(python_snippets, s({
