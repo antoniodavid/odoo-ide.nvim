@@ -54,15 +54,17 @@ local function read_yaml_simple(filepath)
       goto continue
     end
 
-    local key = line:match("^([%w_%-%.]+):%s*$")
+    local key = line:match("^([%w_%-%./\"']+):%s*$")
     if key then
+      key = key:gsub("^['\"]", ""):gsub("['\"]$", "")
       current_key = key
       result[current_key] = {}
       goto continue
     end
 
-    local inline_key, inline_val = line:match("^([%w_%-%.]+):%s*(.+)$")
+    local inline_key, inline_val = line:match("^([%w_%-%./\"']+):%s*(.+)$")
     if inline_key and inline_val then
+      inline_key = inline_key:gsub("^['\"]", ""):gsub("['\"]$", "")
       result[inline_key] = inline_val
       current_key = nil
       goto continue
@@ -130,15 +132,11 @@ function M.get_paths(opts)
   local addons_yaml = src_path .. "/addons.yaml"
   local yaml_content = read_yaml_simple(addons_yaml)
   if yaml_content then
-    for repo_name, modules in pairs(yaml_content) do
-      local include_repo = false
-      if type(modules) == "table" and #modules > 0 then
-        include_repo = true
-      elseif type(modules) == "string" and modules ~= "" then
-        include_repo = true
-      end
-      
-      if include_repo then
+    -- Every top-level key is a repository; the directory check below drops
+    -- the ones that are not cloned in this environment. This covers both the
+    -- flat and the documented `./repo:` nested format.
+    for repo_name, _ in pairs(yaml_content) do
+      if repo_name ~= "" then
         local repo_path
         if repo_name:sub(1, 2) == "./" then
           repo_path = src_path .. "/" .. repo_name:sub(3)

@@ -78,7 +78,27 @@ write_file(src .. "/odoo/odoo-bin", "\n")
 vim.fn.mkdir(src .. "/odoo/addons", "p")
 write_file(src .. "/private/test_addon/__manifest__.py", "{'name': 'test_addon', 'version': '17.0.1.0.0'}\n")
 write_file(src .. "/oca-repo/sale_addon/__manifest__.py", "{'name': 'sale_addon', 'version': '17.0.1.0.0'}\n")
-write_file(src .. "/addons.yaml", 'oca-repo:\n  - "*"\n')
+write_file(src .. "/dot-repo/dot_addon/__manifest__.py", "{'name': 'dot_addon', 'version': '17.0.1.0.0'}\n")
+write_file(src .. "/nested-repo/nested_addon/__manifest__.py", "{'name': 'nested_addon', 'version': '17.0.1.0.0'}\n")
+-- Flat, `./`-prefixed and the documented nested format must all be read.
+write_file(
+  src .. "/addons.yaml",
+  table.concat({
+    'oca-repo:',
+    '  - "*"',
+    './dot-repo:',
+    '  - "*"',
+    './nested-repo:',
+    '  defaults:',
+    '    depth: 1',
+    '  target: odoo 17.0',
+    '  merges:',
+    '    - odoo 17.0',
+    '/missing-repo:',
+    '  - "*"',
+    '',
+  }, "\n")
+)
 -- Repositories with no modules must not be added.
 vim.fn.mkdir(src .. "/empty-repo", "p")
 
@@ -95,6 +115,9 @@ end
 check_true("paths: odoo core addons", seen[src .. "/odoo/addons"])
 check_true("paths: private modules", seen[src .. "/private"])
 check_true("paths: repo from addons.yaml", seen[src .. "/oca-repo"])
+check_true("paths: dot-prefixed repo", seen[src .. "/dot-repo"])
+check_true("paths: nested-format repo", seen[src .. "/nested-repo"])
+check_true("paths: missing repo ignored", not seen[src .. "/missing-repo"])
 check_true("paths: empty repo excluded", not seen[src .. "/empty-repo"])
 
 local content, err = odools.generate_config({ profile_name = "main" })

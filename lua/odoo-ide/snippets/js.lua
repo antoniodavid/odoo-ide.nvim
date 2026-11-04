@@ -17,12 +17,12 @@ table.insert(js_snippets, s({
   dscr = "Extend an Odoo Widget or Component",
 }, {
   t("var "), i(1, "Name"), t(" = "), i(2, "Parent"), t({ ".extend({", 
-      "\tstart: function () {", 
-      "\t\tvar self = this;",
-      "\t\treturn this._super.apply(this, arguments).then(function () {",
-      "\t\t\t" }), i(0), t({ "", 
-      "\t\t});",
-      "\t},",
+      "    start: function () {", 
+      "        var self = this;",
+      "        return this._super.apply(this, arguments).then(function () {",
+      "            " }), i(0), t({ "", 
+      "        });",
+      "    },",
       "});" }),
 }))
 
@@ -33,9 +33,9 @@ table.insert(js_snippets, s({
 }, {
   t({ "const { Component, useState } = owl;", "", 
       "class " }), i(1, "MyComponent"), t({ " extends Component {", 
-      "\tsetup() {",
-      "\t\tthis.state = useState({ " }), i(2, "value: 0"), t({ " });",
-      "\t}",
+      "    setup() {",
+      "        this.state = useState({ " }), i(2, "value: 0"), t({ " });",
+      "    }",
       "}", "",
       }), f(function(args) return args[1][1] end, { 1 }), t({ ".template = '" }), i(3, "template_name"), t("';"),
 }))
@@ -49,10 +49,10 @@ table.insert(js_snippets, s({
       "import { " }), i(1, "TargetComponent"), t({ " } from \"@point_of_sale/app/store/models\";", -- Example path
       "",
       "patch(" }), f(function(args) return args[1][1] end, { 1 }), t({ ".prototype, {",
-      "\tsetup() {",
-      "\t\tsuper.setup(...arguments);",
-      "\t\t" }), i(0), t({ "",
-      "\t},",
+      "    setup() {",
+      "        super.setup(...arguments);",
+      "        " }), i(0), t({ "",
+      "    },",
       "});" }),
 }))
 
@@ -62,9 +62,9 @@ table.insert(js_snippets, s({
   dscr = "odoo.define module",
 }, {
   t("odoo.define('"), i(1, "module.name"), t({ "', function (require) {", 
-      "\t\"use strict\";", "", 
-      "\tvar " }), i(2, "Variable"), t(" = require('"), i(3, "dependency"), t({ "');", "", 
-      "\t" }), i(0), t({ "", 
+      "    \"use strict\";", "", 
+      "    var " }), i(2, "Variable"), t(" = require('"), i(3, "dependency"), t({ "');", "", 
+      "    " }), i(0), t({ "", 
       "});" }),
 }))
 

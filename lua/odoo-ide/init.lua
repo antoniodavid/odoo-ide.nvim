@@ -57,11 +57,21 @@ function M.setup(opts)
   if ok_tasks then
     tasks.setup_commands()
   end
+
+  M.setup_commands()
+end
+
+function M.setup_commands()
+  vim.api.nvim_create_user_command("OdooHelp", function()
+    require("odoo-ide.ui").show_help()
+  end, {
+    desc = "Show the odoo-ide quick reference",
+  })
 end
 
 function M.debug()
   if M.context then
-    M.context.debug()
+    vim.print(M.context.get_context())
   else
     vim.notify("odoo-ide: Context module not loaded", vim.log.levels.WARN)
   end
@@ -99,9 +109,5 @@ function M.show_odools_config()
     vim.notify("odoo-ide: " .. (err or "Failed to generate config"), vim.log.levels.ERROR)
   end
 end
-
-vim.api.nvim_create_user_command("OdooHelp", function()
-  require("odoo-ide.ui").show_help()
-end, {})
 
 return M
