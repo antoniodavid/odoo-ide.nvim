@@ -289,6 +289,7 @@ function M.start_debug()
 
   tasks.start_debug({
     odoo_version = current.version or 17,
+    port = M.debugpy_port(current.version),
   })
 end
 
@@ -326,6 +327,7 @@ function M.attach_and_debug()
     vim.notify("[odoo-ide] Starting Odoo with debugpy on :" .. port .. "...", vim.log.levels.INFO)
     tasks.start_debug({
       odoo_version = current.version or 17,
+      port = port,
     })
 
     M.wait_for_port(port, 30, function(success, err)

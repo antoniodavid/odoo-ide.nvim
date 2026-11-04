@@ -60,6 +60,15 @@ M.defaults = {
     -- Bind <leader>dD to start + attach
     keymap = true,
   },
+  -- Doodba task runner defaults
+  tasks = {
+    -- Database used by :OdooTest and :OdooResetDB
+    dbname = "devel",
+    -- Docker Compose service that runs Odoo
+    service = "odoo",
+    -- Reverse proxy service restarted by :OdooRestart
+    proxy_service = "odoo_proxy",
+  },
   -- odools.toml generation options
   odools = {
     -- Output path relative to project root (nil = project root)

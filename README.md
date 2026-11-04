@@ -1,5 +1,7 @@
 # odoo-ide.nvim
 
+[![tests](https://github.com/antoniodavid/odoo-ide.nvim/actions/workflows/tests.yml/badge.svg)](https://github.com/antoniodavid/odoo-ide.nvim/actions/workflows/tests.yml)
+
 > A Neovim plugin for Odoo development: project-aware context detection, LSP integration, smart snippets and Doodba task runners.
 
 ## ✨ Features
@@ -100,6 +102,14 @@ require("odoo-ide").setup({
   odools = {
     -- nil = project root for Doodba, current working directory for local projects
     output_path = nil,
+  },
+
+  tasks = {
+    -- Database used by :OdooTest and :OdooResetDB, and the Compose services
+    -- driven by the lifecycle commands.
+    dbname = "devel",
+    service = "odoo",
+    proxy_service = "odoo_proxy",
   },
 
   ruff = {

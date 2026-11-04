@@ -2,6 +2,22 @@ local M = {}
 local doodba = require("odoo-ide.doodba")
 local context = require("odoo-ide.context")
 
+---Defaults for the Docker service and database names (Doodba conventions).
+local DEFAULTS = {
+  dbname = "devel",
+  service = "odoo",
+  proxy_service = "odoo_proxy",
+}
+
+M.options = vim.deepcopy(DEFAULTS)
+
+---Apply user options.
+---@param opts table|nil plugin options
+function M.setup(opts)
+  local task_opts = (opts or {}).tasks or {}
+  M.options = vim.tbl_extend("force", DEFAULTS, task_opts)
+end
+
 local function get_current_addon()
   local addon_root = context.get_addon_root()
   if addon_root then
@@ -74,8 +90,8 @@ function M.test(opts)
     "compose",
     "run",
     "--rm",
-    "-e", "DB_FILTER=^devel$",
-    "odoo",
+    "-e", "DB_FILTER=^" .. M.options.dbname .. "$",
+    M.options.service,
     "odoo",
     "--test-enable",
     "--stop-after-init",
@@ -120,7 +136,7 @@ function M.install(opts)
     "docker",
     "compose",
     "stop",
-    "odoo",
+    M.options.service,
   }
 
   vim.system(cmd, { cwd = root }, function()
@@ -129,7 +145,7 @@ function M.install(opts)
       "compose",
       "run",
       "--rm",
-      "odoo",
+      M.options.service,
       "addons",
       "init",
       "-w",
@@ -172,7 +188,7 @@ function M.uninstall(opts)
     "compose",
     "run",
     "--rm",
-    "odoo",
+    M.options.service,
     "click-odoo-uninstall",
     "-m",
     addon_name,
@@ -207,7 +223,7 @@ function M.logs(opts)
   if opts.container then
     table.insert(cmd, opts.container)
   else
-    table.insert(cmd, "odoo")
+    table.insert(cmd, M.options.service)
   end
 
   M.run_in_terminal(root, cmd, "odoo-ide logs")
@@ -274,8 +290,8 @@ function M.restart(opts)
     "compose",
     "restart",
     "-t0",
-    "odoo",
-    "odoo_proxy",
+    M.options.service,
+    M.options.proxy_service,
   }
 
   vim.system(cmd, { cwd = root }, function(handler)
@@ -295,10 +311,10 @@ function M.resetdb(opts)
     return
   end
 
-  local dbname = opts.dbname or "devel"
+  local dbname = opts.dbname or M.options.dbname
   local modules = opts.modules or "base"
 
-  local stop_cmd = { "docker", "compose", "stop", "odoo" }
+  local stop_cmd = { "docker", "compose", "stop", M.options.service }
   vim.system(stop_cmd, { cwd = root }, function()
     local drop_cmd = {
       "docker",
@@ -306,7 +322,7 @@ function M.resetdb(opts)
       "run",
       "--rm",
       "-l", "traefik.enable=false",
-      "odoo",
+      M.options.service,
       "click-odoo-dropdb",
       dbname,
     }
@@ -318,7 +334,7 @@ function M.resetdb(opts)
         "run",
         "--rm",
         "-l", "traefik.enable=false",
-        "odoo",
+        M.options.service,
         "click-odoo-initdb",
         "-n", dbname,
         "-m", modules,
@@ -396,7 +412,7 @@ function M.scaffold(opts)
     "--rm",
     "-v",
     root .. ":/tmp/project:rw",
-    "odoo",
+    M.options.service,
     "odoo",
     "scaffold",
     module_name,
@@ -420,8 +436,7 @@ function M.start_debug(opts)
     return nil
   end
 
-  local odoo_version = opts.odoo_version or 17.0
-  local port = math.floor(odoo_version) * 1000 + 899
+  local port = opts.port
 
   -- Prefer invoke (standard Doodba)
   if vim.fn.executable("invoke") == 1 then
@@ -549,7 +564,7 @@ function M.setup_commands()
   })
 
   vim.api.nvim_create_user_command("OdooResetDB", function(cmd_opts)
-    local opts = { dbname = "devel", modules = "base" }
+    local opts = { dbname = nil, modules = "base" }
     if cmd_opts.args and cmd_opts.args ~= "" then
       local dbname = cmd_opts.args:match("dbname=([^%s]+)")
       local modules = cmd_opts.args:match("modules=([^%s]+)")

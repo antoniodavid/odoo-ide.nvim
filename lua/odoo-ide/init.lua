@@ -55,6 +55,7 @@ function M.setup(opts)
 
   local ok_tasks, tasks = pcall(require, "odoo-ide.tasks")
   if ok_tasks then
+    tasks.setup(M.options)
     tasks.setup_commands()
   end
 

@@ -43,10 +43,10 @@ table.insert(js_snippets, s({
 table.insert(js_snippets, s({
   trig = "ooowlpatch",
   name = "Patch OWL Component",
-  dscr = "Patch an existing OWL Component",
+  dscr = "Patch an existing OWL Component (Odoo 16+)",
 }, {
-  t({ "import { patch } = require(\"@web/core/utils/patch\");",
-      "import { " }), i(1, "TargetComponent"), t({ " } from \"@point_of_sale/app/store/models\";", -- Example path
+  t({ "import { patch } from \"@web/core/utils/patch\";",
+      "import { " }), i(1, "TargetComponent"), t({ " } from \"" }), i(2, "@web/views/fields/char/char_field"), t({ "\";",
       "",
       "patch(" }), f(function(args) return args[1][1] end, { 1 }), t({ ".prototype, {",
       "    setup() {",

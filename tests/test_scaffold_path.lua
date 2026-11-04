@@ -62,6 +62,17 @@ check_true("outside path reports an error", type(err) == "string" and err:find("
 check("missing target", nil, (tasks.container_path(root, nil)))
 check("missing root", nil, (tasks.container_path(nil, "module")))
 
+-- Docker service and database names are configurable.
+tasks.setup({ tasks = { dbname = "custom_db", service = "web", proxy_service = "proxy" } })
+check("tasks: dbname override", "custom_db", tasks.options.dbname)
+check("tasks: service override", "web", tasks.options.service)
+check("tasks: proxy service override", "proxy", tasks.options.proxy_service)
+
+tasks.setup({})
+check("tasks: default dbname", "devel", tasks.options.dbname)
+check("tasks: default service", "odoo", tasks.options.service)
+check("tasks: default proxy service", "odoo_proxy", tasks.options.proxy_service)
+
 print("")
 if failures == 0 then
   print("=== All scaffold path tests passed ===")
