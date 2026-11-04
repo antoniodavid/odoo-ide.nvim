@@ -92,15 +92,30 @@ end
 ---Detect current file location type
 ---@return string location_type: "models", "wizards", "controllers", "tests", "views", "security", "static", "other"
 function M.get_file_location()
-  local filepath = vim.fn.expand("%:p")
+  local filepath = vim.api.nvim_buf_get_name(0)
+
+  -- Directory and virtual buffers (oil, netrw, dashboards) have no location
+  -- inside an addon, and their URI is not a filesystem path.
+  if filepath == "" or filepath:match("^%a[%w+.-]*://") or vim.fn.isdirectory(filepath) == 1 then
+    return "other"
+  end
+
+  if filepath:sub(1, 1) ~= "/" then
+    filepath = vim.fn.fnamemodify(filepath, ":p")
+  end
+
   local addon_root = M.get_addon_root()
-  
   if not addon_root then
     return "other"
   end
-  
+
+  local prefix = addon_root .. "/"
+  if filepath:sub(1, #prefix) ~= prefix then
+    return "other"
+  end
+
   -- Get relative path from addon root
-  local relative = filepath:sub(#addon_root + 2)
+  local relative = filepath:sub(#prefix + 1)
   
   -- Detect location by directory
   if relative:match("^models/") or relative:match("^models%.py$") then
@@ -139,7 +154,7 @@ function M.get_model_info()
     type = "Model", -- Model, TransientModel, AbstractModel
   }
   
-  local lines = vim.api.nvim_buf_get_lines(0, 0, 200, false)
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
   
   for _, line in ipairs(lines) do
     -- Detect _name = 'model.name'
@@ -239,7 +254,12 @@ function M.find_orphan_computes()
       table.insert(orphans, { field = field, method = compute })
     end
   end
-  
+
+  -- Stable output: pairs() iteration order is undefined.
+  table.sort(orphans, function(a, b)
+    return a.field < b.field
+  end)
+
   return orphans
 end
 

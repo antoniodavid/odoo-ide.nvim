@@ -73,6 +73,7 @@ write_file(
     "",
     '    name = fields.Char(string="Name")',
     '    amount = fields.Float(compute="_compute_amount")',
+    '    z_orphan = fields.Float(compute="_compute_z_orphan")',
     '    total = fields.Float(compute="_compute_total")',
     "",
     '    @api.depends("name")',
@@ -119,16 +120,46 @@ local info = context.get_model_info()
 check("model name", "test.model", info.name)
 check("model inherit", "mail.thread", info.inherit)
 check("model type", "Model", info.type)
-check("model field count", 3, #info.fields)
+check("model field count", 4, #info.fields)
 check("model has compute", true, context.has_compute_method("amount"))
 check("model missing compute", false, context.has_compute_method("total"))
 
 local orphans = context.find_orphan_computes()
-check("orphan compute count", 1, #orphans)
+check("orphan compute count", 2, #orphans)
 if orphans[1] then
+  check("orphan computes are sorted (first)", "total", orphans[1].field)
   check("orphan compute method", "_compute_total", orphans[1].method)
-  check("orphan compute field", "total", orphans[1].field)
 end
+if orphans[2] then
+  check("orphan computes are sorted (second)", "z_orphan", orphans[2].field)
+end
+
+-- Fields declared after the old 200-line cutoff must still be detected.
+local large_file = addon .. "/models/large_model.py"
+local large_lines = {
+  "from odoo import fields, models",
+  "",
+  "",
+  "class LargeModel(models.Model):",
+  '    _name = "large.model"',
+  "",
+}
+for index = 1, 240 do
+  large_lines[#large_lines + 1] = "    field_" .. index .. " = fields.Char()"
+end
+large_lines[#large_lines + 1] = '    late_field = fields.Char()'
+write_file(large_file, table.concat(large_lines, "\n"))
+edit(large_file)
+check("model scan covers the whole buffer", true, vim.tbl_contains(context.get_fields(), "late_field"))
+
+-- Directory and URI buffers are not files inside an addon.
+vim.cmd("enew")
+vim.api.nvim_buf_set_name(0, addon .. "/models")
+check("directory buffer location", "other", context.get_file_location())
+
+vim.cmd("enew")
+vim.api.nvim_buf_set_name(0, "oil://" .. addon .. "/")
+check("URI buffer location", "other", context.get_file_location())
 
 -- A wizard in the same addon reports its own model type.
 local wizard_file = addon .. "/wizards/test_wizard.py"
