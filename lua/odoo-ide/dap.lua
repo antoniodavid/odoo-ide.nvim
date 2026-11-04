@@ -1,79 +1,82 @@
 local M = {}
-local doodba = require("odoo-ide.doodba")
+
+local project = require("odoo-ide.project")
 local tasks = require("odoo-ide.tasks")
 
-local function get_odoo_version(root)
-  local common_yaml = root .. "/common.yaml"
-  local f = io.open(common_yaml, "r")
-  if not f then return 17.0 end
+---Adapter name used by this plugin, so a user's `python` adapter is untouched.
+M.ADAPTER = "odoo-python"
 
-  local content = f:read("*a")
-  f:close()
+M._configured = nil
 
-  local version_str = content:match('ODOO_VERSION:%s*["\']?([%d%.]+)["\']?')
-  if version_str then
-    return tonumber(version_str)
+---debugpy port for an Odoo version, matching Doodba's convention.
+---@param odoo_version number|nil
+---@return number
+function M.debugpy_port(odoo_version)
+  return math.floor(odoo_version or 17) * 1000 + 899
+end
+
+---Web port for an Odoo version.
+---@param odoo_version number|nil
+---@return number
+function M.web_port(odoo_version)
+  return math.floor(odoo_version or 17) * 1000 + 69
+end
+
+local function has_manifest(dir)
+  return vim.fn.filereadable(dir .. "/__manifest__.py") == 1
+    or vim.fn.filereadable(dir .. "/__openerp__.py") == 1
+end
+
+---Add every addon found directly inside `dir`.
+---@param mappings table[]
+---@param seen table<string, boolean>
+---@param dir string
+local function add_addons_from(mappings, seen, dir)
+  if vim.fn.isdirectory(dir) == 0 then
+    return
   end
-  return 17.0
+
+  for name, kind in vim.fs.dir(dir) do
+    if kind == "directory" and not seen[name] and has_manifest(dir .. "/" .. name) then
+      seen[name] = true
+      table.insert(mappings, {
+        localRoot = dir .. "/" .. name,
+        remoteRoot = "/opt/odoo/auto/addons/" .. name,
+      })
+    end
+  end
 end
 
-local function get_debugpy_port(root)
-  return math.floor(get_odoo_version(root)) * 1000 + 899
-end
-
-local function get_path_mappings(root, version)
+---Path mappings for Doodba: the checkout root plus every addon, matching what
+---Doodba's own `tasks.py` generates for VS Code.
+---@param current table detected project
+---@return table[]
+function M.build_path_mappings(current)
   local mappings = {}
-  local src_path = root .. "/odoo/custom/src"
+
+  if not current or not current.odoo_path then
+    return mappings
+  end
+
+  local seen = {}
+  local src = current.root .. "/odoo/custom/src"
 
   table.insert(mappings, {
-    localRoot = src_path .. "/odoo",
-    remoteRoot = "/opt/odoo/custom/src/odoo"
+    localRoot = current.odoo_path,
+    remoteRoot = "/opt/odoo/custom/src/odoo",
   })
 
-  local handle = vim.loop.fs_scandir(src_path)
-  if handle then
-    while true do
-      local name, type = vim.loop.fs_scandir_next(handle)
-      if not name then break end
+  -- Core addons, including the ones bundled inside the `odoo` package.
+  add_addons_from(mappings, seen, current.odoo_path .. "/addons")
+  add_addons_from(mappings, seen, current.odoo_path .. "/odoo/addons")
 
-      if type == "directory" and name ~= "odoo" then
-        local repo_path = src_path .. "/" .. name
-
-        local answers = io.open(repo_path .. "/.copier-answers.yml", "r")
-        if answers then
-          local content = answers:read("*a")
-          answers:close()
-        end
-
-        local addons_handle = vim.loop.fs_scandir(repo_path)
-        if addons_handle then
-
-           local function scan_dir(dir, relative_prefix)
-              local h = vim.loop.fs_scandir(dir)
-              if not h then return end
-              while true do
-                local addon_name, addon_type = vim.loop.fs_scandir_next(h)
-                if not addon_name then break end
-
-                if addon_type == "directory" then
-                   local addon_full_path = dir .. "/" .. addon_name
-                   local manifest = io.open(addon_full_path .. "/__manifest__.py", "r") or io.open(addon_full_path .. "/__openerp__.py", "r")
-                   if manifest then
-                      manifest:close()
-                      local remote_root = "/opt/odoo/auto/addons/" .. addon_name
-                      table.insert(mappings, {
-                        localRoot = addon_full_path,
-                        remoteRoot = remote_root
-                      })
-                   end
-                end
-              end
-           end
-
-           scan_dir(repo_path)
-           scan_dir(repo_path .. "/addons")
-           scan_dir(repo_path .. "/odoo/custom/src/private")
-        end
+  -- Custom repositories, including the `private` folder.
+  if vim.fn.isdirectory(src) == 1 then
+    for name, kind in vim.fs.dir(src) do
+      if kind == "directory" and name ~= "odoo" and name ~= "OCB" then
+        local repo = src .. "/" .. name
+        add_addons_from(mappings, seen, repo)
+        add_addons_from(mappings, seen, repo .. "/addons")
       end
     end
   end
@@ -81,84 +84,152 @@ local function get_path_mappings(root, version)
   return mappings
 end
 
-local function wait_for_port(port, timeout_sec, callback)
-  local elapsed = 0
-  local timer = vim.loop.new_timer()
-  timer:start(0, 1000, vim.schedule_wrap(function()
-    if elapsed >= timeout_sec then
-      timer:close()
-      callback(false, "Timeout waiting for port " .. port)
-      return
-    end
-
-    local check = io.popen("ss -tlnp 'sport = :" .. port .. "' 2>/dev/null || nc -z 127.0.0.1 " .. port .. " 2>/dev/null")
-    if check then
-      local result = check:read("*a")
-      check:close()
-      if result and #result > 0 then
-        timer:close()
-        callback(true)
-        return
-      end
-    end
-
-    elapsed = elapsed + 1
-    if elapsed % 5 == 0 then
-      vim.notify("[odoo-ide] Waiting for debugpy on :" .. port .. " (" .. elapsed .. "s)", vim.log.levels.INFO)
-    end
-  end))
+---Python debug configuration for the container.
+---@param port number
+---@param mappings table[]
+---@return table
+function M.build_python_configuration(port, mappings)
+  return {
+    type = M.ADAPTER,
+    request = "attach",
+    name = "Odoo: Attach to Container (Port " .. port .. ")",
+    host = "127.0.0.1",
+    port = port,
+    pathMappings = mappings,
+    justMyCode = false,
+  }
 end
 
-function M.setup(opts)
+---Browser debug configuration for the Odoo web client.
+---@param odoo_version number|nil
+---@return table
+function M.build_javascript_configuration(odoo_version)
+  return {
+    type = "pwa-chrome",
+    request = "attach",
+    name = "Odoo: Attach Chrome (Port 9222)",
+    port = 9222,
+    urlFilter = "http://localhost:" .. M.web_port(odoo_version) .. "/?debug=assets*",
+    webRoot = "${workspaceFolder}",
+  }
+end
+
+---Register the adapter and configurations for the current Doodba project.
+---
+---Existing adapters and configurations are preserved: the plugin owns only the
+---entries whose type is `odoo-python`.
+---@return table|nil project
+function M.ensure_configured()
   local dap_ok, dap = pcall(require, "dap")
-  if not dap_ok then return end
+  if not dap_ok then
+    return nil
+  end
 
-  if not doodba.is_doodba() then return end
+  local current = project.get()
+  if not current or not project.is_doodba(current) then
+    return nil
+  end
 
-  M.options = opts or {}
-  local root = doodba.find_root()
-  local port = get_debugpy_port(root)
+  local port = M.debugpy_port(current.version)
+  local key = current.root .. "|" .. tostring(port)
+  if M._configured == key then
+    return current
+  end
 
-  dap.adapters.python = {
+  dap.adapters[M.ADAPTER] = {
     type = "server",
     host = "127.0.0.1",
     port = port,
   }
 
-  local path_mappings = get_path_mappings(root, get_odoo_version(root))
+  local python_configs = {}
+  for _, config in ipairs(dap.configurations.python or {}) do
+    if config.type ~= M.ADAPTER then
+      table.insert(python_configs, config)
+    end
+  end
+  table.insert(python_configs, M.build_python_configuration(port, M.build_path_mappings(current)))
+  dap.configurations.python = python_configs
 
-  dap.configurations.python = {
-    {
-      type = "python",
-      request = "attach",
-      name = "Odoo: Attach to Container (Port " .. port .. ")",
-      host = "127.0.0.1",
-      port = port,
-      pathMappings = path_mappings,
-      justMyCode = false,
-    }
-  }
+  -- Only offer the browser configuration when the adapter actually exists;
+  -- registering it unconditionally produced a configuration that could not run.
+  if dap.adapters["pwa-chrome"] then
+    local js_config = M.build_javascript_configuration(current.version)
+    local js_configs = {}
+    for _, config in ipairs(dap.configurations.javascript or {}) do
+      if config.name ~= js_config.name then
+        table.insert(js_configs, config)
+      end
+    end
+    table.insert(js_configs, js_config)
+    dap.configurations.javascript = js_configs
+  end
 
-  vim.schedule(function()
-    vim.notify("DAP: Odoo Python Debugger configured on 127.0.0.1:" .. port, vim.log.levels.INFO)
+  M._configured = key
+  return current
+end
+
+---Forget the configured project (used when the project changes in tests).
+function M.reset()
+  M._configured = nil
+end
+
+---Check whether a TCP port accepts connections, without blocking the UI.
+---@param port number
+---@param callback fun(open: boolean)
+function M.port_open(port, callback)
+  local uv = vim.uv
+  local tcp = uv.new_tcp()
+  if not tcp then
+    return callback(false)
+  end
+
+  local finished = false
+  tcp:connect("127.0.0.1", port, function(err)
+    if finished then
+      return
+    end
+    finished = true
+    tcp:close()
+    callback(err == nil)
   end)
+end
 
-  local web_port = math.floor(get_odoo_version(root)) * 1000 + 69
-  local web_url = "http://localhost:" .. web_port .. "/?debug=assets"
+---Poll a port until it accepts connections or the timeout expires.
+---@param port number
+---@param timeout_sec number
+---@param callback fun(ok: boolean, err: string|nil)
+function M.wait_for_port(port, timeout_sec, callback)
+  local uv = vim.uv
+  local timer = uv.new_timer()
+  local elapsed = 0
+  local checking = false
 
-  dap.configurations.javascript = {
-    {
-        type = "pwa-chrome",
-        request = "attach",
-        name = "Odoo: Attach Chrome (Port 9222)",
-        port = 9222,
-        urlFilter = web_url .. "*",
-        webRoot = "${workspaceFolder}",
-    }
-  }
+  timer:start(0, 1000, vim.schedule_wrap(function()
+    if elapsed >= timeout_sec then
+      timer:stop()
+      timer:close()
+      callback(false, "Timeout waiting for port " .. port)
+      return
+    end
 
-  M.register_commands()
-  M.register_keymaps()
+    elapsed = elapsed + 1
+    if checking then
+      return
+    end
+    checking = true
+
+    M.port_open(port, function(open)
+      checking = false
+      if open then
+        timer:stop()
+        timer:close()
+        callback(true)
+      elseif elapsed % 5 == 0 then
+        vim.notify("[odoo-ide] Waiting for debugpy on :" .. port .. " (" .. elapsed .. "s)", vim.log.levels.INFO)
+      end
+    end)
+  end))
 end
 
 function M.register_commands()
@@ -176,30 +247,48 @@ function M.register_commands()
 end
 
 function M.register_keymaps()
-  local dap_ok, _ = pcall(require, "dap")
-  if not dap_ok then return end
+  vim.keymap.set("n", "<leader>dD", function()
+    M.attach_and_debug()
+  end, { desc = "Odoo: Debug start + attach" })
+end
 
-  vim.api.nvim_set_keymap("n", "<leader>dD", "", {
-    noremap = true,
-    desc = "Odoo: Debug start + attach",
+function M.setup(opts)
+  local dap_ok = pcall(require, "dap")
+  if not dap_ok then
+    return
+  end
+
+  M.options = opts or {}
+  M.register_commands()
+
+  local dap_opts = M.options.dap or {}
+  if dap_opts.keymap ~= false then
+    M.register_keymaps()
+  end
+
+  -- Configure lazily: at startup the working directory is not necessarily the
+  -- project the user will work on.
+  vim.api.nvim_create_autocmd("FileType", {
+    pattern = { "python" },
     callback = function()
-      M.attach_and_debug()
+      M.ensure_configured()
     end,
   })
+
+  vim.schedule(function()
+    M.ensure_configured()
+  end)
 end
 
 function M.start_debug()
-  local root = doodba.find_root()
-  if not root then
+  local current = M.ensure_configured()
+  if not current then
     vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
     return
   end
 
-  local port = get_debugpy_port(root)
-  local odoo_version = get_odoo_version(root)
-
   tasks.start_debug({
-    odoo_version = odoo_version,
+    odoo_version = current.version or 17,
   })
 end
 
@@ -210,31 +299,36 @@ function M.attach_and_debug()
     return
   end
 
-  local root = doodba.find_root()
-  if not root then
+  local current = M.ensure_configured()
+  if not current then
     vim.notify("[odoo-ide] Not in a Doodba project", vim.log.levels.ERROR)
     return
   end
 
-  local port = get_debugpy_port(root)
-  local odoo_version = get_odoo_version(root)
+  local port = M.debugpy_port(current.version)
+  local mappings = M.build_path_mappings(current)
 
-  -- Probe if container already running with debugpy
-  local check = io.popen("ss -tlnp 'sport = :" .. port .. "' 2>/dev/null")
-  local already_running = false
-  if check then
-    local result = check:read("*a")
-    check:close()
-    already_running = result and #result > 0
+  local function attach()
+    local dapui_ok, dapui = pcall(require, "dapui")
+    if dapui_ok then
+      dapui.open()
+    end
+    dap.run(M.build_python_configuration(port, mappings))
   end
 
-  if not already_running then
+  M.port_open(port, function(open)
+    if open then
+      vim.notify("[odoo-ide] Attaching to running Odoo on :" .. port, vim.log.levels.INFO)
+      attach()
+      return
+    end
+
     vim.notify("[odoo-ide] Starting Odoo with debugpy on :" .. port .. "...", vim.log.levels.INFO)
     tasks.start_debug({
-      odoo_version = odoo_version,
+      odoo_version = current.version or 17,
     })
 
-    wait_for_port(port, 30, function(success, err)
+    M.wait_for_port(port, 30, function(success, err)
       if not success then
         vim.notify("[odoo-ide] Debug attach failed: " .. (err or "port not available"), vim.log.levels.ERROR)
         return
@@ -242,24 +336,10 @@ function M.attach_and_debug()
 
       vim.schedule(function()
         vim.notify("[odoo-ide] Container ready, attaching debugger...", vim.log.levels.INFO)
-        local dapui_ok, dapui = pcall(require, "dapui")
-        if dapui_ok then
-          dapui.open()
-        end
-        dap.continue()
+        attach()
       end)
     end)
-  else
-    vim.notify("[odoo-ide] Attaching to running Odoo on :" .. port, vim.log.levels.INFO)
-    local dapui_ok, dapui = pcall(require, "dapui")
-    if dapui_ok then
-      dapui.open()
-    end
-    dap.continue()
-  end
-end
-
-function M.generate_launch_json()
+  end)
 end
 
 return M

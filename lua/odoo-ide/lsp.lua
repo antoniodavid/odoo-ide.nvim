@@ -66,14 +66,59 @@ local function find_pyright_binary()
   return nil
 end
 
+---Merge Neovim's default LSP capabilities with user-provided ones.
+---
+---`vim.lsp.start` does not merge `vim.lsp.config[name]`, so a client started
+---from here advertises only Neovim's defaults unless the completion engine's
+---capabilities are passed explicitly.
+---@param extra table|nil
+---@return table
+function M.capabilities(extra)
+  local capabilities = vim.lsp.protocol.make_client_capabilities()
+  if type(extra) == "table" then
+    capabilities = vim.tbl_deep_extend("force", capabilities, extra)
+  end
+  return capabilities
+end
+
+---Build the odoo-ls command line.
+---@param binary string
+---@param opts table odoo_ls options
+---@param config_path string|nil
+---@param stdlib_path string|nil
+---@return string[]
+function M.build_odoo_ls_cmd(binary, opts, config_path, stdlib_path)
+  local cmd = { binary }
+
+  if config_path then
+    table.insert(cmd, "--config-path")
+    table.insert(cmd, config_path)
+  end
+
+  if stdlib_path then
+    table.insert(cmd, "--stdlib")
+    table.insert(cmd, stdlib_path)
+  end
+
+  -- The profile is selected through the CLI: the server exposes
+  -- `--selected-config` and ignores an unknown settings key.
+  table.insert(cmd, "--selected-config")
+  table.insert(cmd, opts.profile_name or "main")
+
+  return cmd
+end
+
 ---Configure pyright/basedpyright for Odoo projects.
 ---@param opts? table pyright options (lsp.pyright)
-function M.setup_pyright(opts)
+---@param capabilities? table extra LSP capabilities (lsp.capabilities)
+function M.setup_pyright(opts, capabilities)
   opts = opts or {}
 
   if opts.enabled == false then
     return
   end
+
+  local client_capabilities = M.capabilities(capabilities)
 
   vim.api.nvim_create_autocmd("FileType", {
     pattern = { "python" },
@@ -109,6 +154,7 @@ function M.setup_pyright(opts)
         name = server_name,
         cmd = { pyright_binary, "--stdio" },
         root_dir = current.root,
+        capabilities = client_capabilities,
         settings = {
           python = {
             analysis = {
@@ -133,7 +179,8 @@ end
 ---Configure odoo-ls for the detected project.
 ---@param opts? table odoo_ls options (lsp.odoo_ls)
 ---@param odools_opts? table odools options
-function M.setup_odoo_ls(opts, odools_opts)
+---@param capabilities? table extra LSP capabilities (lsp.capabilities)
+function M.setup_odoo_ls(opts, odools_opts, capabilities)
   opts = opts or {}
   odools_opts = odools_opts or {}
 
@@ -145,6 +192,8 @@ function M.setup_odoo_ls(opts, odools_opts)
   if not odoo_ls_binary then
     return
   end
+
+  local client_capabilities = M.capabilities(capabilities)
 
   vim.api.nvim_create_autocmd("FileType", {
     pattern = { "python", "xml", "csv", "javascript" },
@@ -176,19 +225,9 @@ function M.setup_odoo_ls(opts, odools_opts)
         })
       end
 
-      local cmd = { odoo_ls_binary }
       local config_path = odools.get_config_path(current, { output_path = odools_opts.output_path })
-
-      if config_path then
-        table.insert(cmd, "--config-path")
-        table.insert(cmd, config_path)
-      end
-
       local stdlib_path = opts.stdlib_path or find_stdlib_path()
-      if stdlib_path then
-        table.insert(cmd, "--stdlib")
-        table.insert(cmd, stdlib_path)
-      end
+      local cmd = M.build_odoo_ls_cmd(odoo_ls_binary, opts, config_path, stdlib_path)
 
       vim.notify("[odoo-ide] Starting odoo_ls with cmd: " .. vim.inspect(cmd), vim.log.levels.DEBUG)
 
@@ -196,15 +235,11 @@ function M.setup_odoo_ls(opts, odools_opts)
         name = "odoo_ls",
         cmd = cmd,
         root_dir = current.root,
+        capabilities = client_capabilities,
         workspace_folders = {
           {
             uri = vim.uri_from_fname(current.root),
             name = "main_folder",
-          },
-        },
-        settings = {
-          Odoo = {
-            selectedProfile = opts.profile_name or "main",
           },
         },
       }, {
@@ -225,8 +260,8 @@ function M.setup(opts)
     return
   end
 
-  M.setup_pyright(lsp_opts.pyright or {})
-  M.setup_odoo_ls(lsp_opts.odoo_ls or {}, opts.odools or {})
+  M.setup_pyright(lsp_opts.pyright or {}, lsp_opts.capabilities)
+  M.setup_odoo_ls(lsp_opts.odoo_ls or {}, opts.odools or {}, lsp_opts.capabilities)
 end
 
 return M

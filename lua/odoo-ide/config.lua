@@ -11,6 +11,9 @@ M.defaults = {
   lsp = {
     enabled = true,
     auto_configure = true,
+    -- Extra LSP capabilities merged over Neovim's defaults, e.g.
+    -- require("blink.cmp").get_lsp_capabilities()
+    capabilities = nil,
     -- Configure pyright/basedpyright path injection
     -- Disabled by default - use odoo_ls instead for Odoo projects
     pyright = {
@@ -44,12 +47,16 @@ M.defaults = {
     lint = "ruff",
     -- Additional args for linter
     lint_args = {},
+    -- Run nvim-lint on every buffer write
+    lint_on_save = false,
   },
   -- DAP / Debugging configuration
   dap = {
     enabled = true,
     -- "auto" calcula desde ODOO_VERSION: math.floor(ver) * 1000 + 899
     debugpy_port = "auto",
+    -- Bind <leader>dD to start + attach
+    keymap = true,
   },
   -- odools.toml generation options
   odools = {

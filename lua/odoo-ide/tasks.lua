@@ -14,28 +14,35 @@ local function find_project_root()
   return doodba.find_root()
 end
 
-local function run_invoke(c, opts)
-  opts = opts or {}
-  local root = find_project_root()
-  if not root then
-    return false, "Not in a Doodba project"
-  end
+---Run a command in a terminal buffer so its output is visible.
+---@param root string Working directory
+---@param cmd string[]
+---@param title string Buffer name for the terminal
+---@param on_exit? fun(code: integer)
+---@return integer job id
+function M.run_in_terminal(root, cmd, title, on_exit)
+  vim.cmd("botright new")
 
-  local cmd = opts.cmd or {}
-  table.insert(cmd, 1, "invoke")
+  local buf = vim.api.nvim_get_current_buf()
+  vim.bo[buf].buftype = "nofile"
+  vim.bo[buf].bufhidden = "hide"
+  vim.bo[buf].swapfile = false
+  vim.bo[buf].filetype = "odoo-terminal"
 
-  local handle = vim.system(cmd, {
+  local job = vim.fn.jobstart(cmd, {
     cwd = root,
-    env = opts.env or {},
-  }, function(handler)
-    if handler.code == 0 then
-      vim.notify("[odoo-ide] " .. opts.success_msg, vim.log.levels.INFO)
-    else
-      vim.notify("[odoo-ide] Error: " .. (handler.stderr or "Unknown error"), vim.log.levels.ERROR)
-    end
-  end)
+    term = true,
+    on_exit = function(_, code)
+      if on_exit then
+        on_exit(code)
+      end
+    end,
+  })
 
-  return true, handle
+  pcall(vim.api.nvim_buf_set_name, buf, title)
+  vim.cmd("startinsert")
+
+  return job
 end
 
 function M.test(opts)
@@ -79,13 +86,11 @@ function M.test(opts)
     addon_name,
   }
 
-  local handle = vim.system(cmd, {
-    cwd = root,
-  }, function(handler)
-    if handler.code == 0 then
+  M.run_in_terminal(root, cmd, "odoo-ide test: " .. addon_name, function(code)
+    if code == 0 then
       vim.notify("[odoo-ide] Tests passed for " .. addon_name, vim.log.levels.INFO)
     else
-      vim.notify("[odoo-ide] Tests failed for " .. addon_name, vim.log.levels.ERROR)
+      vim.notify("[odoo-ide] Tests failed for " .. addon_name .. " (exit " .. code .. ")", vim.log.levels.ERROR)
     end
   end)
 end
@@ -205,10 +210,7 @@ function M.logs(opts)
     table.insert(cmd, "odoo")
   end
 
-  vim.system(cmd, {
-    cwd = root,
-    detach = true,
-  })
+  M.run_in_terminal(root, cmd, "odoo-ide logs")
 end
 
 function M.start(opts)

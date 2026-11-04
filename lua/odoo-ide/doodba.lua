@@ -156,18 +156,18 @@ function M.get_paths(opts)
     local exclude_set = {}
     for _, v in ipairs(exclude_list) do exclude_set[v] = true end
 
-    local handle = vim.loop.fs_scandir(src_path)
+    local handle = vim.uv.fs_scandir(src_path)
     if handle then
       while true do
-        local name, type = vim.loop.fs_scandir_next(handle)
+        local name, type = vim.uv.fs_scandir_next(handle)
         if not name then break end
         if type == "directory" and not exclude_set[name] then
           local repo_path = src_path .. "/" .. name
           -- Check for modules
-          local sub_handle = vim.loop.fs_scandir(repo_path)
+          local sub_handle = vim.uv.fs_scandir(repo_path)
           if sub_handle then
             while true do
-              local sub_name, sub_type = vim.loop.fs_scandir_next(sub_handle)
+              local sub_name, sub_type = vim.uv.fs_scandir_next(sub_handle)
               if not sub_name then break end
               if sub_type == "directory" then
                 if file_exists(repo_path .. "/" .. sub_name .. "/__manifest__.py") or
